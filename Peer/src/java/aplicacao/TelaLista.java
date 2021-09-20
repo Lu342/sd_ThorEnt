@@ -3,11 +3,10 @@
 import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import javax.swing.table.DefaultTableModel;
 
 //import com.google.gson.Gson;
 //import com.google.gson.JsonSyntaxException;
@@ -36,6 +35,7 @@ public class TelaLista extends javax.swing.JPanel {
     }
 
     List<Arquivo> arquivos = new ArrayList<>();
+    Map<String, Arquivo> fileMap = new HashMap<>();
     TorrentFilesManage tfm = new TorrentFilesManage();
 
     @SuppressWarnings("unchecked")
@@ -181,8 +181,10 @@ public class TelaLista extends javax.swing.JPanel {
         }
         String url = "http://localhost:8080/Peer/webresources/peer/salvar/";
         new Conexao().conectaWebService(url, new Gson().toJson(listaArquivos), "POST");
-        arquivos = tfm.getTrackerList(Conexao.IP_TRACKER);
+
+        tfm.getTrackerList(Conexao.IP_TRACKER).forEatch(arquivo -> fileMap.put(arquivo.getNome(), arquivo))
         tblListaDeArquivos.removeAll();
+        
         DefaultTableModel model = new DefaultTableModel();
         model.setColumnIdentifiers(new Object[] { "Nome do Arquivo", "Tamanho (kb)" });
         tblListaDeArquivos.setModel(model);
@@ -209,18 +211,12 @@ public class TelaLista extends javax.swing.JPanel {
     private void btnDownloadMouseClicked(java.awt.event.MouseEvent evt) {// GEN-FIRST:event_btnDownloadMouseClicked
         int linha = tblListaDeArquivos.getSelectedRow();
         String nomeArquivo = tblListaDeArquivos.getModel().getValueAt(linha, 0).toString();
-        Arquivo arquivo = new Arquivo();
-
-        for (int i = 0; i < arquivos.size(); i++) {
-            if (arquivos.get(i).getNome().equals(nomeArquivo)) {
-                arquivo = arquivos.get(i);
-            }
-        }
-
-        // PREPARANDO PEERS PARA CONEXAO
+        Arquivo arquivo = fileMap.get(nomeArquivo);
         int tamanho_vetor = 200;
         int numero_peers = arquivo.getPeer().size();
         int[] vetor_principal = new int[tamanho_vetor];
+        Arrays.fill(vetor_principal, 200);
+
         byte[] vetor_final;
         int tamanho_bloco = (int) tamanho_vetor / (numero_peers * 5);
         int l = 0;
@@ -228,37 +224,31 @@ public class TelaLista extends javax.swing.JPanel {
         int progress = 0;
         barra.setMinimum(0);
         barra.setMaximum(tamanho_vetor - 1);
-        barra.setValue(0); 
+        barra.setValue(0);
         barra.setStringPainted(true);
 
         List<Thread> listaThreads = new ArrayList<>();
-
         List<Peers> peersList = buidPeerList(arquivo);
-       
 
-        for (int i = 0; i < vetor_principal.length; i++) {
-            vetor_principal[i] = 200;
-        }
         telaLog.logArea.append("fazendo download...\n");
         telaLog.logArea.append("Arquivo: " + arquivo.getNome());
         telaLog.logArea.append("Tamanho: " + arquivo.getTamanhoArquivo());
         for (int i = 0; i < vetor_principal.length; i++) {
             if (vetor_principal[i] < -128 || vetor_principal[i] > 127) {
                 for (int j = 0; j < numero_peers; j++) {
-                    if (peers.get(j).getDisponibilidade()) {
-                        configThread(arquivo, listaThreads, i, tamanho_bloco, peers, tamanho_vetor, vetor_principal);
-                    } else {
-                        awaitUntilAvailable(l, peers, j);
-                    }
+                    peersList.get(j).getDisponibilidade();
+                    configThread(arquivo, listaThreads, i, tamanho_bloco, peersList, tamanho_vetor, vetor_principal);
+                    awaitUntilAvailable(l, peersList, j);
                 }
-                i--;
-            }
-            progress++;
-            updateProgress(progress);
-        }
 
-        // VERIFICANDO SE AS THREADS JA ENCERRARAM
-        clearThreads(listaThreads);
+            }
+            i--;
+        }
+        atualizar();
+    }
+
+    // VERIFICANDO SE AS THREADS JA ENCERRARAM
+    void clearThreads(listaThreads);
         barra.setStringPainted(false);
         telaLog.logArea.append("download feito!\n");
         System.out.println("download feito!\n");
@@ -268,7 +258,7 @@ public class TelaLista extends javax.swing.JPanel {
         atualizar();
     }
 
-    List<Peer> buidPeerList(Arquivo arquivo){
+    List<Peer> buidPeerList(Arquivo arquivo) {
         List<PeerModelo> peers = new ArrayList<>();
 
         for (int i = 0; i < arquivo.getPeer().size(); i++) {
@@ -280,7 +270,7 @@ public class TelaLista extends javax.swing.JPanel {
         return peers;
     }
 
-    private void saveDownloadedFile(int tamanho_vetor,int[] vetor_principal, byte[] vetor_final, Arquivo arquivo){
+    private void saveDownloadedFile(int tamanho_vetor, int[] vetor_principal, byte[] vetor_final, Arquivo arquivo) {
         vetor_final = new byte[vetor_principal.length];
 
         for (int i = 0; i < vetor_principal.length; i++) {
@@ -299,7 +289,7 @@ public class TelaLista extends javax.swing.JPanel {
                 telaLog.logArea.append("Hash do arquivo baixado: " + new TorrentFilesManage().getHashCode(vetor_final));
 
             }
-            
+
         } catch (Exception ex) {
             telaLog.logArea.append("Salvar arquivo: " + ex.getMessage());
             System.out.println("Salvar arquivo: " + ex.getMessage());
@@ -308,7 +298,7 @@ public class TelaLista extends javax.swing.JPanel {
 
     }
 
-    private void clearThreads(List<Thread> listaThreads){
+    private void clearThreads(List<Thread> listaThreads) {
         int indice = listaThreads.size();
         while (indice > 0) {
             for (int i = 0; i < listaThreads.size(); i++) {
@@ -322,10 +312,10 @@ public class TelaLista extends javax.swing.JPanel {
         }
     }
 
-    private void updateProgress(int value){
+    private void updateProgress(int value) {
         barra.setStringPainted(true);
-            barra.setValue(value);
-            telaLog.logArea.append(barra.getString() + "\n");
+        barra.setValue(value);
+        telaLog.logArea.append(barra.getString() + "\n");
     }
 
     private void awaitUntilAvailable(int l, List<PeerModelo> peers, int j) {
@@ -339,20 +329,21 @@ public class TelaLista extends javax.swing.JPanel {
         j = l - 1;
     }
 
-    private void configThread(Arquivo arquivo, List<Thread> listaThreads, int i, float tamanho_bloco, List<PeerModelo> peers, int tamanho_vetor,int[] vetor_principal){
+    private void configThread(Arquivo arquivo, List<Thread> listaThreads, int i, float tamanho_bloco,
+            List<PeerModelo> peers, int tamanho_vetor, int[] vetor_principal) {
         int ii = i;
-                        i += tamanho_bloco;
-                        int jj = j;
-                        String hashArquivo = arquivo.getHashArquivo();
-                        String nome = arquivo.getNome();
-                        Thread thread = new Thread(new Runnable() {
-                            @Override
-                            public void run() {
-                                receiveFile(peers,tamanho_vetor,vetor_principal, ii, jj, tamanho_bloco);
-                            }
-                        });
-                        listaThreads.add(thread);
-                        thread.start();
+        i += tamanho_bloco;
+        int jj = j;
+        String hashArquivo = arquivo.getHashArquivo();
+        String nome = arquivo.getNome();
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                receiveFile(peers, tamanho_vetor, vetor_principal, ii, jj, tamanho_bloco);
+            }
+        });
+        listaThreads.add(thread);
+        thread.start();
     };
 
     private void receiveFile(List<PeerModelo> peers, int tamanho_vetor,int[] vetor_principal, int ii, int jj, float tamanho_bloco){
